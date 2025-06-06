@@ -25,12 +25,18 @@ class _HomePageState extends State<HomePage> {
   ExpenseType _selectedCategory = ExpenseType.Other;
   FilterOption _selectedFilter = FilterOption.all;
 
+  String _searchQuery = '';  // متغير بحث
+
   @override
   Widget build(BuildContext context) {
     List<Expenses> allExpenses = widget.expenseRepo.getAllExpenses();
     UserData user = widget.expenseRepo.getUserData();
 
+    // تطبيق الفلترة والبحث معًا
     List<Expenses> filteredExpenses = _applyFilter(allExpenses);
+
+    // حساب إجمالي المصروفات للفلترة الحالية
+    double totalExpenses = filteredExpenses.fold(0, (sum, e) => sum + e.money);
 
     return Scaffold(
       appBar: AppBar(
@@ -50,7 +56,10 @@ class _HomePageState extends State<HomePage> {
             tooltip: 'Reset All',
             onPressed: () {
               widget.expenseRepo.resetAll();
-              setState(() {});
+              setState(() {
+                _searchQuery = '';
+                _selectedFilter = FilterOption.all;
+              });
             },
           ),
         ],
@@ -64,11 +73,13 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildSummaryCard(user),
+                  _buildSummaryCard(user, totalExpenses),
                   const SizedBox(height: 20),
                   _buildAddExpenseForm(),
                   const SizedBox(height: 20),
                   _buildFilterChips(),
+                  const SizedBox(height: 10),
+                  _buildSearchField(),
                   const SizedBox(height: 10),
                   _buildExpensesList(filteredExpenses),
                 ],
@@ -80,30 +91,35 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildSummaryCard(UserData user) {
+  Widget _buildSummaryCard(UserData user, double totalExpenses) {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 4,
-      color: Colors.teal.shade50, // لون خلفية البطاقة
+      color: Colors.teal.shade50,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             Text(
               "Monthly Income: ${user.monthlyIncome.toStringAsFixed(2)} ُEGP",
-              style: TextStyle(color: Colors.teal.shade900), // لون النص
+              style: TextStyle(color: Colors.teal.shade900),
             ),
             const SizedBox(height: 8),
             Text(
               "Remaining Balance: ${user.remainingBalance.toStringAsFixed(2)} ُEGP",
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal), // لون النص
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Total Expenses (${_selectedFilter.name.toUpperCase()}): ${totalExpenses.toStringAsFixed(2)} ُEGP",
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent),
             ),
             const SizedBox(height: 8),
             ElevatedButton(
               onPressed: () => _showIncomeDialog(user),
               child: const Text("Edit Income"),
               style: ElevatedButton.styleFrom(
-                foregroundColor: Colors.white, backgroundColor: Colors.teal, // لون النص
+                foregroundColor: Colors.white, backgroundColor: Colors.teal,
               ),
             ),
           ],
@@ -162,7 +178,7 @@ class _HomePageState extends State<HomePage> {
                 onPressed: _submitExpense,
                 child: const Text("Add"),
                 style: ElevatedButton.styleFrom(
-                  foregroundColor: Colors.white, backgroundColor: Colors.teal, // لون النص
+                  foregroundColor: Colors.white, backgroundColor: Colors.teal,
                 ),
               ),
             ],
@@ -180,10 +196,25 @@ class _HomePageState extends State<HomePage> {
           label: Text(option.name.toUpperCase()),
           selected: _selectedFilter == option,
           onSelected: (_) => setState(() => _selectedFilter = option),
-          selectedColor: Colors.teal, // لون الخيار المحدد
-          labelStyle: TextStyle(color: _selectedFilter == option ? Colors.white : Colors.black), // لون النص
+          selectedColor: Colors.teal,
+          labelStyle: TextStyle(color: _selectedFilter == option ? Colors.white : Colors.black),
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      decoration: const InputDecoration(
+        labelText: 'Search Expenses',
+        prefixIcon: Icon(Icons.search),
+        border: OutlineInputBorder(),
+      ),
+      onChanged: (val) {
+        setState(() {
+          _searchQuery = val.toLowerCase();
+        });
+      },
     );
   }
 
@@ -242,19 +273,31 @@ class _HomePageState extends State<HomePage> {
     DateTime now = DateTime.now();
 
     return all.where((e) {
+      bool matchesFilter;
       switch (_selectedFilter) {
         case FilterOption.today:
-          return e.date.year == now.year &&
+          matchesFilter = e.date.year == now.year &&
               e.date.month == now.month &&
               e.date.day == now.day;
+          break;
         case FilterOption.week:
           final diff = now.difference(e.date).inDays;
-          return diff <= 7;
+          matchesFilter = diff <= 7;
+          break;
         case FilterOption.month:
-          return e.date.year == now.year && e.date.month == now.month;
+          matchesFilter = e.date.year == now.year && e.date.month == now.month;
+          break;
         case FilterOption.all:
-          return true;
+          matchesFilter = true;
+          break;
       }
+      // تحقق من نص البحث في العنوان أو الملاحظات أو اسم التصنيف
+      bool matchesSearch = _searchQuery.isEmpty ||
+          e.title.toLowerCase().contains(_searchQuery) ||
+          (e.notes?.toLowerCase().contains(_searchQuery) ?? false) ||
+          e.category.name.toLowerCase().contains(_searchQuery);
+
+      return matchesFilter && matchesSearch;
     }).toList();
   }
 
